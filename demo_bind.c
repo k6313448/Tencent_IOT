@@ -12,7 +12,6 @@
 
 #include <stdio.h>
 #include <string.h>
-
 #include <stdlib.h>
 #include <unistd.h>
 #include <linux/types.h>
@@ -22,12 +21,19 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
+#include <sys/un.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <sys/shm.h>
 
 #include "TXSDKCommonDef.h"
 #include "TXDeviceSDK.h"
 #include "TXMsg.h"
 
+#define UNIX_DOMAIN "/tmp/UNIX_QQBTSF.domain"  
+
 int g_interval=1;
+char g_rbuf[10240];
 /**
  * 登录完成的通知，errcode为0表示登录成功，其余请参考全局的错误码表
  */
@@ -173,7 +179,7 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
 				}
 				if(startPoint>0 && startPoint<19){
 					interval=atoi(data_points[i].value[j+1]);
-					if(interval>=1){
+					if(interval>=1&&interval<=10){
 						g_interval=interval;
 						strcpy(sendMsg,"Success");
 					}
@@ -328,8 +334,6 @@ void test_send_pic_alarm(char* input)
 	
 	tx_send_text_msg(1,str_1,&reset,0,0,0);
 	
-//	tx_send_text_msg(1,itoa(atoi("asb:12")),&reset,0,0,0);
-
 	}
 	else
 	{
@@ -344,22 +348,55 @@ void on_report_data_point_callback_internal(unsigned int cookie, int err_code)
 	printf("on_report_data_point_callback_internal cookie[%u] err_code[%d]",cookie, err_code);
 }
 
-void SendReportDataPoints()
+//Send Beacon to Server using datapoint
+void sendBeaconReport()
 {
-	printf("SendReportDataPoints\n");
-	
+	printf("Sending Beacon Reports\n");
 	tx_data_point bigDP;
 	bigDP.id				= 10000;
 	bigDP.ret_code     = 0;
 	bigDP.seq             = 10000;
 				
-	bigDP.value = malloc(64);
-	memset(bigDP.value,0,64);
-	strcpy(bigDP.value,"{\"ret\":0,\"msg\":\"172.16.0.1\"}");
-	
+	bigDP.value = malloc(10240);
+	memset(bigDP.value,0,10240);
+	beaconSocket();
+	strcpy(bigDP.value,g_rbuf);
+	printf("bigDP.value:%s\n",bigDP.value);	
 	unsigned int cookie = 0;
 	tx_report_data_points(&bigDP,1,&cookie,on_report_data_point_callback_internal);
-	printf("Report Finished: cookie[%u]",cookie);
+	printf("Report Finished: cookie[%u]\n\n\n",cookie);
+	if(bigDP.value) free(bigDP.value);
+}
+
+int beaconSocket(void)
+{
+    int connect_fd;
+    int ret,len;
+    int i;
+    static struct sockaddr_un srv_addr;
+
+        connect_fd=socket(PF_UNIX,SOCK_STREAM,0);
+        if(connect_fd<0)
+        {
+            perror("cannot create communication socket");
+            return 1;
+        }
+        srv_addr.sun_family=AF_UNIX;
+        strcpy(srv_addr.sun_path,UNIX_DOMAIN);
+        ret=connect(connect_fd,(struct sockaddr*)&srv_addr,sizeof(srv_addr));
+        if(ret==-1)
+        {
+            perror("cannot connect to the server");
+            close(connect_fd);
+            return 1;
+        }
+        memset(g_rbuf,0,sizeof(g_rbuf));
+        len = recv(connect_fd, g_rbuf, sizeof(g_rbuf),0);
+        //if(len < 0)
+        //    continue;
+        //printf("%s\n", g_rbuf);
+        close(connect_fd);
+    return 0;
 }
 
 void* thread_func_reportdata(void * arg)
@@ -370,7 +407,7 @@ void* thread_func_reportdata(void * arg)
 	while(1) {
 		now = time(NULL);
 		if((now - last_check_time_report_dp) > g_interval){             
-			SendReportDataPoints();
+			sendBeaconReport();
 			last_check_time_report_dp = now;
 		}	
 	}
