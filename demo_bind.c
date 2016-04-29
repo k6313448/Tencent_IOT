@@ -123,6 +123,8 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
 			printf("user datapoint:%d\n",data_points[i].id);	    
 
 			char sendMsg[20]={0};
+		
+			//test
 			if(data_points[i].id == 10000)
 			{
 				unsigned int cookie = 0;
@@ -139,6 +141,7 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
 				tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
 				if(dp_to_send.value) free(dp_to_send.value);
 			}
+			//query ip
             else if(data_points[i].id == 100002868)
             {
 				printf("IP Address Query.\n");
@@ -164,13 +167,13 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
                 tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
                 if(dp_to_send.value) free(dp_to_send.value);
             }
+			//set interval
             else if(data_points[i].id == 100002876)
             {
+				printf("Set interval.\n");
                 unsigned int cookie = 0;
                 tx_data_point dp_to_send = {0};
 				int interval=0;
-				int j=0;
-				int startPoint=0;
 
 				interval=atoi(data_points[i].value);
 				if(interval>=1&&interval<=20){
@@ -194,43 +197,52 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
                 tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
                 if(dp_to_send.value) free(dp_to_send.value);
             }
-			
+			//set time
             else if(data_points[i].id == 100002877)
             {
+				printf("Set Time.\n");
                 unsigned int cookie = 0;
                 tx_data_point dp_to_send = {0};
 				char setTime[30]="0";
 				char systemPara[50]="0";
-				int j=0;
-				int startPoint=0;
-				int systemRet=0;
 				strcpy(setTime,data_points[i].value);
 				strcpy(systemPara,"date -s ");
 				strcat(systemPara,setTime);
 				system(systemPara);
 				printf("systemPara: %s\n",systemPara);
-				/*if(systemRet < 0){
-					strcpy(sendMsg,"Set time failed.");
-				}
-				else{
-					strcpy(sendMsg,"Set time success.");
-				}*/
 			
 				strcpy(sendMsg,"Set time success.");
 			
 				dp_to_send.id = data_points[i].id;
                 dp_to_send.seq = data_points[i].seq;
                 dp_to_send.ret_code = 0;
-
                 dp_to_send.value = malloc(64);
                 memset(dp_to_send.value,0,64);
                 strcpy(dp_to_send.value,"{\"ret\":0,\"msg\":\"");
 				strcat(dp_to_send.value,sendMsg);
 				strcat(dp_to_send.value,"\"}");
-
                 tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
                 if(dp_to_send.value) free(dp_to_send.value);
-            }   	
+            }   
+			//query beacon
+            else if(data_points[i].id == 100002883)
+            {
+				printf("Query Beacon\n");
+				unsigned int cookie = 0;
+                tx_data_point dp_to_send = {0};
+				
+				dp_to_send.id = data_points[i].id;
+                dp_to_send.seq = data_points[i].seq;
+                dp_to_send.ret_code = 0;
+                dp_to_send.value = malloc(1024);
+                memset(dp_to_send.value,0,1024);
+				beaconSocket();
+                strcpy(dp_to_send.value,g_rbuf);
+				printf("value:%s\n",dp_to_send.value);	
+                tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
+				printf("Query Beacon Finished: cookie[%u]\n\n\n",cookie);
+                if(dp_to_send.value) free(dp_to_send.value);
+			}   
 		}
 	}
 }
@@ -326,7 +338,7 @@ bool initDevice() {
 
     // 设置log输出函数，如果不想打印log，则无需设置。
     // 建议开发在开发调试阶段开启log，在产品发布的时候禁用log。
-    //tx_set_log_func(log_func,1,0);
+    tx_set_log_func(log_func,1,0);
 
     // 初始化SDK，若初始化成功，则内部会启动一个线程去执行相关逻辑，该线程会持续运行，直到收到 exit 调用
 	int ret = tx_init_device(&info, &notify, &init_path);
@@ -386,10 +398,10 @@ void sendBeaconReport()
 	memset(bigDP.value,0,1024);
 	beaconSocket();
 	strcpy(bigDP.value,g_rbuf);
-	printf("bigDP.value:%s\n",bigDP.value);	
+	//printf("bigDP.value:%s\n",bigDP.value);	
 	unsigned int cookie = 0;
 	tx_report_data_points(&bigDP,1,&cookie,on_report_data_point_callback_internal);
-	printf("Report Finished: cookie[%u]\n\n\n",cookie);
+	//printf("Report Finished: cookie[%u]\n\n\n",cookie);
 	if(bigDP.value) free(bigDP.value);
 }
 
@@ -510,14 +522,14 @@ int main(int argc, char* argv[]) {
 	//while (scanf("%s", input)) {
 	while(1)
 	{
-		if(gets(input)){
+/*		if(gets(input)){
 			if ( !strcmp(input, "quit") ) {
 				tx_exit_device();
 				break;
 		}
 		test_send_pic_alarm(input);
 	}
-		
+*/		
 		sleep(1);
 	}
 	
