@@ -31,9 +31,11 @@
 #include "TXMsg.h"
 
 #define UNIX_DOMAIN "/tmp/UNIX_QQBTSF.domain"  
+#define UNIX_DOMAIN_WIFI "/tmp/UNIX_QQWIFISF.domain"  
 
 int g_interval=1;
 char g_rbuf[1024];
+//char g_rbuf_wifi[1024];
 /**
  * 登录完成的通知，errcode为0表示登录成功，其余请参考全局的错误码表
  */
@@ -134,8 +136,7 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
 				dp_to_send.seq = data_points[i].seq;
 				dp_to_send.ret_code = 0;
 
-				dp_to_send.value = malloc(64);
-				memset(dp_to_send.value,0,64);
+				dp_to_send.value = calloc(1,64);
 				strcpy(dp_to_send.value,"{\"ret\":0,\"msg\":\"172.16.0.1\"}");
 
 				tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
@@ -158,8 +159,7 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
                 dp_to_send.id = data_points[i].id;
                 dp_to_send.seq = data_points[i].seq;
                 dp_to_send.ret_code = 0;
-                dp_to_send.value = malloc(64);
-                memset(dp_to_send.value,0,64);
+                dp_to_send.value = calloc(1,64);
                 strcpy(dp_to_send.value,"{\"ret\":0,\"msg\":\"");
 				strcat(dp_to_send.value,sendMsg);
 				strcat(dp_to_send.value,"\"}");
@@ -188,8 +188,7 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
                 dp_to_send.seq = data_points[i].seq;
                 dp_to_send.ret_code = 0;
 
-                dp_to_send.value = malloc(64);
-                memset(dp_to_send.value,0,64);
+                dp_to_send.value = calloc(1,64);
                 strcpy(dp_to_send.value,"{\"ret\":0,\"msg\":\"");
 				strcat(dp_to_send.value,sendMsg);
 				strcat(dp_to_send.value,"\"}");
@@ -216,8 +215,7 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
 				dp_to_send.id = data_points[i].id;
                 dp_to_send.seq = data_points[i].seq;
                 dp_to_send.ret_code = 0;
-                dp_to_send.value = malloc(64);
-                memset(dp_to_send.value,0,64);
+                dp_to_send.value = calloc(1,64);
                 strcpy(dp_to_send.value,"{\"ret\":0,\"msg\":\"");
 				strcat(dp_to_send.value,sendMsg);
 				strcat(dp_to_send.value,"\"}");
@@ -229,15 +227,28 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
             {
 				printf("Query Beacon\n");
 				unsigned int cookie = 0;
+				int value_int = 0;
                 tx_data_point dp_to_send = {0};
 				
 				dp_to_send.id = data_points[i].id;
                 dp_to_send.seq = data_points[i].seq;
                 dp_to_send.ret_code = 0;
-                dp_to_send.value = malloc(1024);
-                memset(dp_to_send.value,0,1024);
-				beaconSocket();
-                strcpy(dp_to_send.value,g_rbuf);
+                dp_to_send.value = calloc(1,1024);
+				value_int=atoi(data_points[i].value);
+				if(value_int==1){
+					printf("Beacon type: Bluetooth\n");
+					beaconSocket();
+					strcpy(dp_to_send.value,g_rbuf);
+				}
+				else if(value_int==2){
+					printf("Beacon type: WiFi\n");
+					beaconSocket_wifi();
+					strcpy(dp_to_send.value,g_rbuf);
+				}
+				else{
+					printf("Query Beacon Error.\n");
+					strcpy(dp_to_send.value,"Query Beacon Error.");
+				}
 				printf("value:%s\n",dp_to_send.value);	
                 tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
 				printf("Query Beacon Finished: cookie[%u]\n\n\n",cookie);
@@ -365,7 +376,7 @@ void test_send_pic_alarm(char* input)
 	char ip[20];
 	if ( get_ip(ip) == 0 )
 	{
-//	tx_send_text_msg(1,ip,&reset,0,0,0);
+//		tx_send_text_msg(1,ip,&reset,0,0,0);
 		char str_1[50];	
 		strcpy(str_1,"{\"ret\":0,\"msg\":\"");
 		strcat(str_1,ip);
@@ -394,8 +405,7 @@ void sendBeaconReport()
 	bigDP.ret_code     = 0;
 	bigDP.seq             = 10000;
 				
-	bigDP.value = malloc(1024);
-	memset(bigDP.value,0,1024);
+	bigDP.value = calloc(1,1024);
 	beaconSocket();
 	strcpy(bigDP.value,g_rbuf);
 	//printf("bigDP.value:%s\n",bigDP.value);	
@@ -404,7 +414,23 @@ void sendBeaconReport()
 	//printf("Report Finished: cookie[%u]\n\n\n",cookie);
 	if(bigDP.value) free(bigDP.value);
 }
-
+void sendBeaconReport_wifi()
+{
+	//printf("Sending WiFi Beacon Reports\n");
+	tx_data_point bigDP;
+	bigDP.id				= 100002904;
+	bigDP.ret_code     = 0;
+	bigDP.seq             = 10000;
+				
+	bigDP.value = calloc(1,1024);
+	beaconSocket_wifi();
+	strcpy(bigDP.value,g_rbuf);
+	//printf("bigDP.value:%s\n",bigDP.value);	
+	unsigned int cookie = 0;
+	tx_report_data_points(&bigDP,1,&cookie,on_report_data_point_callback_internal);
+	//printf("Report Finished: cookie[%u]\n\n\n",cookie);
+	if(bigDP.value) free(bigDP.value);
+}
 int beaconSocket(void)
 {
     int connect_fd;
@@ -435,7 +461,36 @@ int beaconSocket(void)
         close(connect_fd);
     return 0;
 }
+int beaconSocket_wifi(void)
+{
+    int connect_fd;
+    int ret,len;
+    int i;
+    static struct sockaddr_un srv_addr;
 
+        connect_fd=socket(PF_UNIX,SOCK_STREAM,0);
+        if(connect_fd<0)
+        {
+            perror("cannot create communication socket");
+            return 1;
+        }
+        srv_addr.sun_family=AF_UNIX;
+        strcpy(srv_addr.sun_path,UNIX_DOMAIN_WIFI);
+        ret=connect(connect_fd,(struct sockaddr*)&srv_addr,sizeof(srv_addr));
+        if(ret==-1)
+        {
+            perror("cannot connect to the server");
+            close(connect_fd);
+            return 1;
+        }
+        memset(g_rbuf,0,sizeof(g_rbuf));
+        len = recv(connect_fd, g_rbuf, sizeof(g_rbuf),0);
+        //if(len < 0)
+        //    continue;
+        //printf("%s\n", g_rbuf);
+        close(connect_fd);
+    return 0;
+}
 void* thread_func_reportdata(void * arg)
 {
 	time_t now = time(NULL);
@@ -445,12 +500,28 @@ void* thread_func_reportdata(void * arg)
 		now = time(NULL);
 		if((now - last_check_time_report_dp) > g_interval){             
 			sendBeaconReport();
+			sendBeaconReport_wifi();
 			last_check_time_report_dp = now;
 		}	
 	}
 }
+/*
+void* thread_func_reportdata_wifi(void * arg)
+{
+	time_t now = time(NULL);
+	time_t last_check_time_report_dp = now;
 
+	while(1) {
+		now = time(NULL);
+		if((now - last_check_time_report_dp) > g_interval){      
+			sendBeaconReport_wifi();
+			last_check_time_report_dp = now;
+		}	
+	}
+}
+*/
 pthread_t ntid = 0;
+//pthread_t ntid_wifi = 0;
 bool create_report_thread()
 {
 	int err;
@@ -461,6 +532,17 @@ bool create_report_thread()
     }
     return true;
 }
+/*
+bool create_report_thread_wifi()
+{
+	int err;
+	err = pthread_create(&ntid_wifi, NULL, thread_func_reportdata_wifi, NULL);
+	if(err == 0 && ntid_wifi != 0)
+	{
+        ntid_wifi = 0;
+    }
+    return true;
+}*/
 
 //get device ip
 int get_ip(char* outip)
@@ -517,7 +599,8 @@ int main(int argc, char* argv[]) {
 	// 你可以在做其他相关的事情
 	// ...
 	create_report_thread();
-
+	//create_report_thread_wifi();
+	
 	char input[100];
 	//while (scanf("%s", input)) {
 	while(1)
@@ -534,5 +617,7 @@ int main(int argc, char* argv[]) {
 	}
 	
     pthread_join(ntid,NULL);
+    //pthread_join(ntid_wifi,NULL);
+
 	return 0;
 }
