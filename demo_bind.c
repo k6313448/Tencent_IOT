@@ -11,8 +11,6 @@
  */
 /*
  *	light control
- *  query beacon wifi, report beacon wifi
- *  log(http), get_ip, set_time, set_interval, query beacon bluetooth, report beacon bluetooth.
  * 
  * */
 
@@ -38,9 +36,10 @@
 
 #define UNIX_DOMAIN "/tmp/UNIX_QQBTSF.domain"  
 #define UNIX_DOMAIN_WIFI "/tmp/UNIX_QQWIFISF.domain"  
-#define STR_LEN 2048
+#define STR_LEN 20480 
+#define LOG_INTERVAL 43200 //12 hours
+
 int g_interval=1;
-char g_rbuf[1024];
 /**
  * 登录完成的通知，errcode为0表示登录成功，其余请参考全局的错误码表
  */
@@ -227,74 +226,26 @@ void on_receive_data_point_internal(unsigned long long from_client, tx_data_poin
                 tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
                 if(dp_to_send.value) free(dp_to_send.value);
             }   
-			//query beacon
-            else if(data_points[i].id == 100002883)
-            {
-				printf("Query Beacon\n");
-				unsigned int cookie = 0;
-				int value_int = 0;
-                tx_data_point dp_to_send = {0};
-				
-				dp_to_send.id = data_points[i].id;
-                dp_to_send.seq = data_points[i].seq;
-                dp_to_send.ret_code = 0;
-                dp_to_send.value = calloc(1,1024);
-				value_int=atoi(data_points[i].value);
-				if(value_int==1){
-					printf("Beacon type: Bluetooth\n");
-					beaconSocket();
-					strcpy(dp_to_send.value,g_rbuf);
-				}
-				else if(value_int==2){
-					printf("Beacon type: WiFi\n");
-					beaconSocket_wifi();
-					strcpy(dp_to_send.value,g_rbuf);
-				}
-				else{
-					printf("Query Beacon Error.\n");
-					strcpy(dp_to_send.value,"Query Beacon Error.");
-				}
-				printf("value:%s\n",dp_to_send.value);	
-                tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
-				printf("Query Beacon Finished: cookie[%u]\n\n\n",cookie);
-                if(dp_to_send.value) free(dp_to_send.value);
-			}   
+      
 			else if(data_points[i].id == 100002913)
 			{
-				printf("Light Control\n");
+				printf("Light Control received.\n");
 				unsigned int cookie = 0;
-				int value_int = 0;
                 tx_data_point dp_to_send = {0};
 				
 				dp_to_send.id = data_points[i].id;
                 dp_to_send.seq = data_points[i].seq;
                 dp_to_send.ret_code = 0;
-                dp_to_send.value = calloc(1,1024);
-				value_int=atoi(data_points[i].value);
-				if(value_int==1){
-					printf("Turn on\n");
-					char light_on[512]="{\"g\": \"255\",\"cmd\": \"light_ctrl\",\"b\": \"255\",\"effect\": \"8\",\"bright\":\"255\",\"r\": \"255\",\"sn_list\":[ { \"sn\": \"zzzzzzzzzzzzzzzz\"} ],\"matchValue\":\"0\",\"iswitch\": \"1\"}";
-					udp_request("127.0.0.1",light_on,11600);
-					strcpy(dp_to_send.value,"Trun on light.");
-				}
-				else if(value_int==2){
-					printf("Turn off\n");
-					char light_off[512]="{\"g\":\"255\",\"cmd\":\"light_ctrl\",\"b\":\"255\",\"effect\":\"8\",\"bright\":\"255\",\"r\":\"255\",\"sn_list\":[{\"sn\":\"zzzzzzzzzzzzzzzz\"}],\"matchValue\":\"0\",\"iswitch\":\"0\"}";
-					udp_request("127.0.0.1",light_off,11600);
-					strcpy(dp_to_send.value,"Turn off light.");
-				}
-				else if(value_int==3){
-					printf("Get Light Info\n");
-					char light_info[32]="{\"cmd\":\"light_list\"}";
-					udp_request("127.0.0.1",light_info,11600);
-					printf("light_info: %s\n",light_info);
-					strcpy(dp_to_send.value,light_info);
-				}
-				else{
-					printf("Light Control Error.\n");
-					strcpy(dp_to_send.value,"Query Beacon Error.");
-				}
-                tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
+                dp_to_send.value = calloc(20480,sizeof(char));
+				char tmpvalue[20480]={0};
+				strcpy(tmpvalue,data_points[i].value);
+				
+				printf("Light control value: %s\n",tmpvalue);
+				udp_request("127.0.0.1",tmpvalue,11600);
+				strcpy(dp_to_send.value,tmpvalue);
+
+				printf("Light control send: %s\n",dp_to_send.value);
+			    tx_ack_data_points(from_client,&dp_to_send,1,&cookie, send_dp_callback);
                 if(dp_to_send.value) free(dp_to_send.value);
 
 			}
@@ -393,7 +344,7 @@ bool initDevice() {
 
     // 设置log输出函数，如果不想打印log，则无需设置。
     // 建议开发在开发调试阶段开启log，在产品发布的时候禁用log。
-    //tx_set_log_func(log_func,1,0);
+    tx_set_log_func(log_func,1,0);
 
     // 初始化SDK，若初始化成功，则内部会启动一个线程去执行相关逻辑，该线程会持续运行，直到收到 exit 调用
 	int ret = tx_init_device(&info, &notify, &init_path);
@@ -441,155 +392,57 @@ void on_report_data_point_callback_internal(unsigned int cookie, int err_code)
 }
 
 //Send Beacon to Server using datapoint
-void sendBeaconReport()
-{
-	//printf("Sending Beacon Reports\n");
-	tx_data_point bigDP;
-	bigDP.id				= 100002878;
-	bigDP.ret_code     = 0;
-	bigDP.seq             = 10000;
-				
-	bigDP.value = calloc(1,1024);
-	beaconSocket();
-	strcpy(bigDP.value,g_rbuf);
-	//printf("bigDP.value:%s\n",bigDP.value);	
-	unsigned int cookie = 0;
-	tx_report_data_points(&bigDP,1,&cookie,on_report_data_point_callback_internal);
-	//printf("Report Finished: cookie[%u]\n\n\n",cookie);
-	if(bigDP.value) free(bigDP.value);
-}
-void sendBeaconReport_wifi()
-{
-	//printf("Sending WiFi Beacon Reports\n");
-	tx_data_point bigDP;
-	bigDP.id				= 100002904;
-	bigDP.ret_code     = 0;
-	bigDP.seq             = 10000;
-				
-	bigDP.value = calloc(1,1024);
-	beaconSocket_wifi();
-	strcpy(bigDP.value,g_rbuf);
-	//printf("bigDP.value:%s\n",bigDP.value);	
-	unsigned int cookie = 0;
-	tx_report_data_points(&bigDP,1,&cookie,on_report_data_point_callback_internal);
-	//printf("Report Finished: cookie[%u]\n\n\n",cookie);
-	if(bigDP.value) free(bigDP.value);
-}
-int beaconSocket(void)
-{
-    int connect_fd;
-    int ret,len;
-    int i;
-    static struct sockaddr_un srv_addr;
 
-        connect_fd=socket(PF_UNIX,SOCK_STREAM,0);
-        if(connect_fd<0)
-        {
-            perror("cannot create communication socket");
-            return 1;
-        }
-        srv_addr.sun_family=AF_UNIX;
-        strcpy(srv_addr.sun_path,UNIX_DOMAIN);
-        ret=connect(connect_fd,(struct sockaddr*)&srv_addr,sizeof(srv_addr));
-        if(ret==-1)
-        {
-            perror("cannot connect to the server");
-            close(connect_fd);
-            return 1;
-        }
-        memset(g_rbuf,0,sizeof(g_rbuf));
-        len = recv(connect_fd, g_rbuf, sizeof(g_rbuf),0);
-        //if(len < 0)
-        //    continue;
-        //printf("%s\n", g_rbuf);
-        close(connect_fd);
-    return 0;
-}
-int beaconSocket_wifi(void)
-{
-    int connect_fd;
-    int ret,len;
-    int i;
-    static struct sockaddr_un srv_addr;
-
-        connect_fd=socket(PF_UNIX,SOCK_STREAM,0);
-        if(connect_fd<0)
-        {
-            perror("cannot create communication socket");
-            return 1;
-        }
-        srv_addr.sun_family=AF_UNIX;
-        strcpy(srv_addr.sun_path,UNIX_DOMAIN_WIFI);
-        ret=connect(connect_fd,(struct sockaddr*)&srv_addr,sizeof(srv_addr));
-        if(ret==-1)
-        {
-            perror("cannot connect to the server");
-            close(connect_fd);
-            return 1;
-        }
-        memset(g_rbuf,0,sizeof(g_rbuf));
-        len = recv(connect_fd, g_rbuf, sizeof(g_rbuf),0);
-        //if(len < 0)
-        //    continue;
-        //printf("%s\n", g_rbuf);
-        close(connect_fd);
-    return 0;
-}
-void* thread_func_reportdata(void * arg)
+void* thread_func_logTimer(void * arg)
 {
 	time_t now = time(NULL);
 	time_t last_check_time_report_dp = now;
 
+    int fd0,fd1,fd2,fd3,index;
+	fd0 = open("/usr/web/www/log0.txt",O_CREAT|O_RDWR|O_TRUNC,0644);
+	index = 0;
+	dup2(fd0,1);
+
 	while(1) {
 		now = time(NULL);
-		if((now - last_check_time_report_dp) > g_interval){             
-			sendBeaconReport();
-			sendBeaconReport_wifi();
+		if((now - last_check_time_report_dp) > LOG_INTERVAL){             
+			if(index==0){
+				fflush(stdout);
+				close(fd0);
+				fd1 = open("/usr/web/www/log1.txt",O_CREAT|O_RDWR|O_TRUNC,0644);
+				dup2(fd1,1);
+				index=1;
+			}
+			else if(index==1){
+				fflush(stdout);
+				close(fd1);
+				fd2 = open("/usr/web/www/log2.txt",O_CREAT|O_RDWR|O_TRUNC,0644);
+				dup2(fd2,1);
+				index=2;
+			}
+			else if(index==2){
+				fflush(stdout);
+				close(fd2);
+				fd0 = open("/usr/web/www/log3.txt",O_CREAT|O_RDWR|O_TRUNC,0644);
+				dup2(fd3,1);
+				index=3;
+			}	
+			else{
+				fflush(stdout);
+				close(fd3);
+				fd0 = open("/usr/web/www/log0.txt",O_CREAT|O_RDWR|O_TRUNC,0644);
+				dup2(fd0,1);
+				index=0;
+			}
+			
 			last_check_time_report_dp = now;
-		}	
+			sleep(60);
+		}
+		else{
+			sleep(60);
+		}
 	}
 }
-
-#if 0 
-//upd send
-int udp_send(char* ipaddr, char* msg,int port)
-{
-        int fd, numbytes; /* files descriptors */
-        char sendbuf[1024];
-		strcpy(sendbuf,msg);
-        struct hostent *he; /* structure that will get information about remote host */
-        struct sockaddr_in server; /* server's address information */
-
-        if ((he=gethostbyname(ipaddr))==NULL){ /* calls gethostbyname() */
-                perror("gethostbyname() error\n");
-                exit(1);
-        }
-
-        if ((fd=socket(AF_INET, SOCK_DGRAM, 0))==-1){ /* calls socket() */
-                perror("socket() error\n");
-                exit(1);
-        }
-
-        bzero(&server,sizeof(server));
-        server.sin_family = AF_INET;
-        server.sin_port = htons(port); /* htons() is needed again */
-        server.sin_addr = *((struct in_addr *)he->h_addr); /*he->h_addr passes "*he"'s info to "h_addr" */
-
-        socklen_t len;
-        len=sizeof(struct sockaddr_in);
-
-		//sprintf(sendbuf,"%s",msg);
-		if(sendto(fd,sendbuf,strlen(sendbuf),0,(struct sockaddr *)&server,len)!=strlen(sendbuf))
-		{
-			printf("udp_send function error\r\n");
-			close(fd);
-			exit(1);
-		}
-		
-        close(fd); /* close fd */
-}
-#endif
-
 #if 1 
 //upd receive
 int udp_request(char* ipaddr, char* msg,int port)
@@ -606,7 +459,6 @@ int udp_request(char* ipaddr, char* msg,int port)
                 perror("socket() error\n");
                 exit(1);
         }
-
         bzero(&server,sizeof(server));
         server.sin_family = AF_INET;
         server.sin_port = htons(port); /* htons() is needed again */
@@ -632,44 +484,19 @@ int udp_request(char* ipaddr, char* msg,int port)
         close(fd); /* close fd */
 }
 #endif
-/*
-void* thread_func_reportdata_wifi(void * arg)
-{
-	time_t now = time(NULL);
-	time_t last_check_time_report_dp = now;
 
-	while(1) {
-		now = time(NULL);
-		if((now - last_check_time_report_dp) > g_interval){      
-			sendBeaconReport_wifi();
-			last_check_time_report_dp = now;
-		}	
-	}
-}
-*/
-pthread_t ntid = 0;
-//pthread_t ntid_wifi = 0;
-bool create_report_thread()
+pthread_t ltid = 0;
+bool create_logTimer_thread()
 {
 	int err;
-	err = pthread_create(&ntid, NULL, thread_func_reportdata, NULL);
-	if(err == 0 && ntid != 0)
+	err = pthread_create(&ltid, NULL, thread_func_logTimer, NULL);
+	if(err == 0 && ltid != 0)
 	{
-        ntid = 0;
+        ltid = 0;
     }
     return true;
 }
-/*
-bool create_report_thread_wifi()
-{
-	int err;
-	err = pthread_create(&ntid_wifi, NULL, thread_func_reportdata_wifi, NULL);
-	if(err == 0 && ntid_wifi != 0)
-	{
-        ntid_wifi = 0;
-    }
-    return true;
-}*/
+
 
 //get device ip
 int get_ip(char* outip)
@@ -719,6 +546,7 @@ int get_ip(char* outip)
 *
 *****************************************************************/
 int main(int argc, char* argv[]) {
+	create_logTimer_thread();	
 	if ( !initDevice() ) {
 		return -1;
 	}
@@ -726,8 +554,6 @@ int main(int argc, char* argv[]) {
 	// 你可以在做其他相关的事情
 	// ...
 //	create_report_thread();
-	//create_report_thread_wifi();
-	
 	char input[512];
 
 
@@ -739,29 +565,15 @@ int main(int argc, char* argv[]) {
 				tx_exit_device();
 				break;
 			}
-			/*
-			else if(!strcmp(input,"1")){
-				printf("%s\n",udp1);
-				udp_send("127.0.0.1",udp1,11600);
-			}
-			else if(!strcmp(input,"2")){
-				printf("%s\n",udp2);
-				udp_send("127.0.0.1",udp2,11600);
-			}
-			else {
-				printf("%s\n",input);
-				udp_send("127.0.0.1",input,11600);
-			}*/
+
 		//	test_send_pic_alarm(input);
 		}
 	
-	//	printf("test1");
-	//	udp_send("127.0.0.1","test1",11608);
 		sleep(1);
 	}
 	
   //  pthread_join(ntid,NULL);
-    //pthread_join(ntid_wifi,NULL);
-
+    pthread_join(ltid,NULL);
+	
 	return 0;
 }
